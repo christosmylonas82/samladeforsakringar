@@ -1,0 +1,227 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SystemRole {
+  USER
+  ADMIN
+}
+
+enum PolicyType {
+  HEMFORSAKRING
+  VILLAFORSAKRING
+  BILFORSAKRING
+  LIVFORSAKRING
+  SJUKFORSAKRING
+  OLYCKSFALLSFORSAKRING
+  DJURFORSAKRING
+  RESEFORSAKRING
+  ANSVARSFORSAKRING
+  OVRIGT
+}
+
+enum PolicyStatus {
+  ACTIVE
+  PENDING
+  EXPIRED
+  CANCELLED
+}
+
+enum PaymentFrequency {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum ClaimStatus {
+  SUBMITTED
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  PAID
+}
+
+enum DocumentType {
+  POLICY_DOCUMENT
+  CLAIM_DOCUMENT
+  RECEIPT
+  OVRIGT
+}
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  name         String
+  passwordHash String     @map("password_hash")
+  role         SystemRole @default(USER)
+  gdprConsent  Boolean    @default(false) @map("gdpr_consent")
+  consentDate  DateTime?  @map("consent_date")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  deletedAt    DateTime?  @map("deleted_at")
+
+  policies       InsurancePolicy[]
+  claims         Claim[]
+  documents      Document[]
+  notifications  Notification[]
+  activityLogs   ActivityLog[]
+  auditLogs      AuditLog[]
+  passwordResets PasswordReset[]
+  authEvents     AuthEvent[]
+
+  @@map("users")
+}
+
+model PasswordReset {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  token     String    @unique
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_resets")
+}
+
+model AuthEvent {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  email     String
+  action    String
+  ipAddress String?  @map("ip_address")
+  country   String?
+  city      String?
+  latitude  Float?
+  longitude Float?
+  userAgent String?  @map("user_agent")
+  timestamp DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([timestamp])
+  @@index([userId])
+  @@index([ipAddress])
+  @@map("auth_events")
+}
+
+model InsurancePolicy {
+  id               String            @id @default(uuid())
+  userId           String            @map("user_id")
+  provider         String
+  policyNumber     String            @map("policy_number")
+  type             PolicyType
+  status           PolicyStatus      @default(ACTIVE)
+  premiumAmount    Int               @map("premium_amount")
+  paymentFrequency PaymentFrequency  @default(YEARLY) @map("payment_frequency")
+  coverageAmount   Int?              @map("coverage_amount")
+  startDate        DateTime          @map("start_date")
+  endDate          DateTime?         @map("end_date")
+  notes            String?
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  deletedAt        DateTime?         @map("deleted_at")
+
+  user      User       @relation(fields: [userId], references: [id])
+  claims    Claim[]
+  documents Document[]
+  activity  ActivityLog[]
+
+  @@index([userId])
+  @@map("insurance_policies")
+}
+
+model Claim {
+  id              String      @id @default(uuid())
+  policyId        String      @map("policy_id")
+  userId          String      @map("user_id")
+  status          ClaimStatus @default(SUBMITTED)
+  description     String
+  incidentDate    DateTime    @map("incident_date")
+  filedAt         DateTime    @default(now()) @map("filed_at")
+  amountClaimed   Int         @map("amount_claimed")
+  amountApproved  Int?        @map("amount_approved")
+  notes           String?
+  resolvedAt      DateTime?   @map("resolved_at")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  policy    InsurancePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id])
+  documents Document[]
+  activity  ActivityLog[]
+
+  @@index([policyId])
+  @@index([userId])
+  @@map("claims")
+}
+
+model Document {
+  id         String       @id @default(uuid())
+  policyId   String?      @map("policy_id")
+  claimId    String?      @map("claim_id")
+  title      String
+  type       DocumentType
+  fileData   String       @db.Text
+  fileName   String       @map("file_name")
+  fileSize   Int          @map("file_size")
+  mimeType   String       @map("mime_type")
+  uploadedBy String       @map("uploaded_by")
+  uploadedAt DateTime     @default(now()) @map("uploaded_at")
+
+  policy         InsurancePolicy? @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  claim          Claim?           @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  uploadedByUser User             @relation(fields: [uploadedBy], references: [id])
+
+  @@index([policyId])
+  @@index([claimId])
+  @@map("documents")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("notifications")
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  policyId  String?  @map("policy_id")
+  claimId   String?  @map("claim_id")
+  action    String
+  timestamp DateTime @default(now())
+
+  user   User             @relation(fields: [userId], references: [id])
+  policy InsurancePolicy? @relation(fields: [policyId], references: [id])
+  claim  Claim?           @relation(fields: [claimId], references: [id])
+
+  @@map("activity_log")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  adminId    String   @map("admin_id")
+  action     String
+  targetType String   @map("target_type")
+  targetId   String   @map("target_id")
+  timestamp  DateTime @default(now())
+
+  admin User @relation(fields: [adminId], references: [id])
+
+  @@map("audit_log")
+}
